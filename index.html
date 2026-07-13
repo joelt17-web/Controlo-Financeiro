@@ -12,6 +12,9 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root{
     --bg:#f4f6fb;
@@ -253,6 +256,17 @@
   .info-box b{color:#33357a;}
   .data-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0;}
   .data-actions .btn{width:100%;}
+
+  /* Sincronização */
+  .sync-status{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);font-size:13px;margin-bottom:14px;}
+  .sync-status.ligado{background:var(--primary-soft);color:#046c4e;}
+  .sync-status.desligado{background:#f1f2f6;color:var(--text-muted);}
+  .sync-status.erro{background:var(--danger-soft);color:#a12727;}
+  .sync-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .sync-status.ligado .sync-dot{background:#059669;}
+  .sync-status.desligado .sync-dot{background:#9aa1b1;}
+  .sync-status.erro .sync-dot{background:var(--danger);}
+  .sync-code-display{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:3px;background:#f4f6fb;border:1px dashed var(--border);border-radius:var(--radius-md);padding:14px 18px;text-align:center;margin:12px 0;}
 
   @media (max-width: 980px){
     .stats-grid{grid-template-columns:repeat(2,1fr);}
@@ -530,12 +544,41 @@
       </div>
 
       <div class="card">
+        <h3>Sincronização entre dispositivos</h3>
+        <p class="text-muted">Liga o PC e o telemóvel para que o que registares num apareça automaticamente no outro (usa a nuvem — Firebase).</p>
+        <div id="syncStatus" class="sync-status desligado"><span class="sync-dot"></span><span id="syncStatusText">A verificar…</span></div>
+        <div id="syncSetupMissing" class="info-box" style="display:none;">
+          A sincronização ainda não está configurada nesta app. É preciso ligar um projeto Firebase gratuito — pede ao Claude para te guiar nesse passo.
+        </div>
+        <div id="syncControls" style="display:none;">
+          <div id="syncCodeBlock" style="display:none;">
+            <p class="text-muted">O teu código de sincronização (introduz este código no outro dispositivo):</p>
+            <div class="sync-code-display" id="syncCodeDisplay">------</div>
+            <div class="data-actions">
+              <button class="btn secondary small" id="btnCopySyncCode" type="button">📋 Copiar código</button>
+              <button class="btn danger-outline small" id="btnDisconnectSync" type="button">Desligar sincronização</button>
+            </div>
+          </div>
+          <div id="syncJoinBlock">
+            <div class="data-actions">
+              <button class="btn" id="btnCreateSyncCode" type="button">🔗 Criar código neste dispositivo</button>
+            </div>
+            <p class="text-muted" style="margin-top:14px;">Já tens um código criado no outro dispositivo? Introduz aqui:</p>
+            <form id="formJoinSync" class="inline-form" style="margin-bottom:0;">
+              <input type="text" id="joinSyncCode" placeholder="Código de sincronização" style="text-transform:uppercase;letter-spacing:2px;font-family:ui-monospace,monospace;">
+              <button type="submit" class="btn secondary">Ligar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>Ter a app no telemóvel</h3>
         <div class="info-box">
           <b>1. Abrir o link da app.</b> Se já está publicada no GitHub Pages, basta abrires o link (ex: https://o-teu-utilizador.github.io/nome-do-repositorio/) no browser do telemóvel. Caso contrário, envia os ficheiros (index.html, manifest.json, sw.js e os ícones) para o telemóvel por email, AirDrop ou cloud.<br><br>
           <b>2. Abrir no browser do telemóvel.</b> No iPhone usa o Safari, no Android usa o Chrome.<br><br>
           <b>3. Adicionar ao ecrã principal.</b> iPhone (Safari): toca em Partilhar → "Adicionar ao Ecrã Principal". Android (Chrome): menu ⋮ → "Adicionar ao ecrã principal" / "Instalar app". Vais ter um ícone que abre a app em ecrã inteiro, sem barra de endereço.<br><br>
-          <b>Importante sobre os dados:</b> cada browser/dispositivo guarda os seus próprios dados (localStorage). O telemóvel e o computador não partilham automaticamente os mesmos registos. Usa "Exportar tudo (JSON)" num dispositivo e "Importar" no outro sempre que quiseres sincronizar manualmente.
+          <b>Sobre os dados:</b> se ligares a sincronização acima, o telemóvel e o computador partilham automaticamente os mesmos registos. Sem isso, cada dispositivo guarda os seus dados em separado — usa "Exportar tudo (JSON)" e "Importar" para sincronizar manualmente.
         </div>
       </div>
     </section>
@@ -564,7 +607,7 @@ function loadArray(key){
 function loadObject(key, fallback){
   try{ const v = JSON.parse(localStorage.getItem(key)); return (v && typeof v==='object' && !Array.isArray(v)) ? v : fallback; }catch(e){ return fallback; }
 }
-function saveData(key, data){ localStorage.setItem(key, JSON.stringify(data)); }
+function saveData(key, data){ localStorage.setItem(key, JSON.stringify(data)); schedulePush(); }
 
 let expenses          = loadArray('pf_expenses');
 let incomes           = loadArray('pf_incomes');
@@ -578,6 +621,178 @@ if(!categories.length){
   categories = DEFAULT_CATEGORIES.map(c=>({...c}));
   saveData('pf_categories', categories);
 }
+
+/* ============================= SINCRONIZAÇÃO (Firebase) ============================= */
+// Substitui pelos valores do teu projeto Firebase (Realtime Database + Auth anónima ativados).
+// Estes valores NÃO são secretos — são feitos para ficar visíveis no código do lado do cliente.
+const firebaseConfig = {
+  apiKey: "AIzaSyAuH7_TClbGnsTwbwIv1geJtzZBxARrG-Y",
+  authDomain: "controlo-financeiro-a42b1.firebaseapp.com",
+  projectId: "controlo-financeiro-a42b1",
+  storageBucket: "controlo-financeiro-a42b1.firebasestorage.app",
+  messagingSenderId: "459430095255",
+  appId: "1:459430095255:web:e7fb63e48e4de31ccf7cd2"
+};
+const firebaseConfigured = !!(firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLOCA_AQUI'));
+
+let syncCode = localStorage.getItem('pf_sync_code') || null;
+let deviceId = localStorage.getItem('pf_device_id');
+if(!deviceId){ deviceId = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); localStorage.setItem('pf_device_id', deviceId); }
+let syncDb = null;
+let applyingRemote = false;
+let pushTimer = null;
+let unsubscribeSnapshot = null;
+let syncFirestoreReady = false;
+
+const SYNC_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I/L para evitar confusão ao escrever à mão
+function generateSyncCodeString(){
+  let s = '';
+  for(let i=0;i<10;i++) s += SYNC_CODE_ALPHABET[Math.floor(Math.random()*SYNC_CODE_ALPHABET.length)];
+  return s;
+}
+
+function setSyncStatus(state, text){
+  const el = document.getElementById('syncStatus');
+  const textEl = document.getElementById('syncStatusText');
+  if(!el || !textEl) return;
+  el.className = 'sync-status ' + state;
+  textEl.textContent = text;
+}
+
+function initFirebase(){
+  if(!firebaseConfigured){
+    document.getElementById('syncSetupMissing').style.display = 'block';
+    document.getElementById('syncControls').style.display = 'none';
+    setSyncStatus('desligado', 'Sincronização não configurada.');
+    return;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    syncDb = firebase.database();
+    document.getElementById('syncControls').style.display = 'block';
+    firebase.auth().signInAnonymously().then(()=>{
+      syncFirestoreReady = true;
+      if(syncCode){
+        attachSyncListener(syncCode);
+      } else {
+        setSyncStatus('desligado', 'Não ligado a nenhum dispositivo.');
+      }
+    }).catch(err=>{
+      setSyncStatus('erro', 'Erro de autenticação: ' + err.message);
+    });
+  }catch(err){
+    setSyncStatus('erro', 'Erro a iniciar Firebase: ' + err.message);
+  }
+}
+
+function schedulePush(){
+  if(!syncCode || !syncFirestoreReady || applyingRemote) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushToCloud, 800);
+}
+
+function pushToCloud(){
+  if(!syncCode || !syncDb) return;
+  const payload = { expenses, incomes, investments, categories, budgets, recurringExpenses, recurringIncomes };
+  syncDb.ref('sync/' + syncCode).set({
+    payload, updatedAt: Date.now(), deviceId
+  }).then(()=>{
+    setSyncStatus('ligado', 'Sincronizado às ' + new Date().toLocaleTimeString('pt-PT'));
+  }).catch(err=>{
+    setSyncStatus('erro', 'Erro ao sincronizar: ' + err.message);
+  });
+}
+
+function attachSyncListener(code){
+  if(!syncDb) return;
+  if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+  setSyncStatus('ligado', 'Ligado — código ' + code);
+  const ref = syncDb.ref('sync/' + code);
+  const onValue = (snap)=>{
+    if(!snap.exists()) return;
+    const data = snap.val();
+    if(!data || data.deviceId === deviceId) return; // eco da nossa própria escrita
+    applyingRemote = true;
+    const p = data.payload || {};
+    expenses = p.expenses || [];
+    incomes = p.incomes || [];
+    investments = p.investments || [];
+    investments.forEach(inv=>{ if(!inv.snapshots) inv.snapshots=[]; if(!inv.aportes) inv.aportes=[]; });
+    categories = (p.categories && p.categories.length) ? p.categories : categories;
+    budgets = p.budgets || {};
+    recurringExpenses = p.recurringExpenses || [];
+    recurringIncomes = p.recurringIncomes || [];
+    localStorage.setItem('pf_expenses', JSON.stringify(expenses));
+    localStorage.setItem('pf_incomes', JSON.stringify(incomes));
+    localStorage.setItem('pf_investments', JSON.stringify(investments));
+    localStorage.setItem('pf_categories', JSON.stringify(categories));
+    localStorage.setItem('pf_budgets', JSON.stringify(budgets));
+    localStorage.setItem('pf_recurring_expenses', JSON.stringify(recurringExpenses));
+    localStorage.setItem('pf_recurring_incomes', JSON.stringify(recurringIncomes));
+    renderAll();
+    applyingRemote = false;
+    setSyncStatus('ligado', 'Atualizado a partir de outro dispositivo às ' + new Date().toLocaleTimeString('pt-PT'));
+  };
+  const onError = (err)=>{ setSyncStatus('erro', 'Erro na ligação: ' + err.message); };
+  ref.on('value', onValue, onError);
+  unsubscribeSnapshot = () => ref.off('value', onValue);
+  renderSyncUI();
+}
+
+function renderSyncUI(){
+  const codeBlock = document.getElementById('syncCodeBlock');
+  const joinBlock = document.getElementById('syncJoinBlock');
+  const codeDisplay = document.getElementById('syncCodeDisplay');
+  if(syncCode){
+    codeBlock.style.display = 'block';
+    joinBlock.style.display = 'none';
+    codeDisplay.textContent = syncCode;
+  } else {
+    codeBlock.style.display = 'none';
+    joinBlock.style.display = 'block';
+  }
+}
+
+document.getElementById('btnCreateSyncCode').addEventListener('click', ()=>{
+  if(!syncFirestoreReady){ alert('A ligar ao Firebase, tenta novamente dentro de momentos.'); return; }
+  syncCode = generateSyncCodeString();
+  localStorage.setItem('pf_sync_code', syncCode);
+  attachSyncListener(syncCode);
+  pushToCloud();
+});
+
+document.getElementById('formJoinSync').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  if(!syncFirestoreReady){ alert('A ligar ao Firebase, tenta novamente dentro de momentos.'); return; }
+  const code = document.getElementById('joinSyncCode').value.trim().toUpperCase();
+  if(!code) return;
+  if(!confirm('Isto vai substituir os dados deste dispositivo pelos dados associados a esse código. Continuar?')) return;
+  syncCode = code;
+  localStorage.setItem('pf_sync_code', syncCode);
+  attachSyncListener(syncCode);
+  document.getElementById('joinSyncCode').value = '';
+});
+
+document.getElementById('btnDisconnectSync').addEventListener('click', ()=>{
+  if(!confirm('Desligar a sincronização? Os dados continuam guardados neste dispositivo, só deixam de ser atualizados automaticamente.')) return;
+  if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+  syncCode = null;
+  localStorage.removeItem('pf_sync_code');
+  setSyncStatus('desligado', 'Não ligado a nenhum dispositivo.');
+  renderSyncUI();
+});
+
+document.getElementById('btnCopySyncCode').addEventListener('click', ()=>{
+  if(!syncCode) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(syncCode).then(()=>{
+      const btn = document.getElementById('btnCopySyncCode');
+      const original = btn.textContent;
+      btn.textContent = '✓ Copiado';
+      setTimeout(()=>{ btn.textContent = original; }, 1500);
+    }).catch(()=>{});
+  }
+});
 
 // Migração: investimentos antigos guardavam um único "valorAtual"; passamos a guardar histórico (snapshots).
 let migrated = false;
@@ -1589,6 +1804,7 @@ function renderAll(){
 
 generateRecurringEntries();
 renderAll();
+initFirebase();
 </script>
 </body>
 </html>
