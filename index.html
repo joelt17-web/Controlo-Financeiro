@@ -401,6 +401,7 @@
             <select id="recDespesaCategoria"></select>
             <input type="number" id="recDespesaDia" placeholder="Dia do mês" min="1" max="31" required style="width:110px;">
             <input type="text" id="recDespesaDescricao" placeholder="Descrição (opcional)">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;">Início: <input type="date" id="recDespesaDataInicio" style="width:150px;"></label>
             <input type="date" id="recDespesaDataFim" style="width:150px;" disabled>
             <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;"><input type="checkbox" id="recDespesaSemFim" checked> Sem data de término</label>
             <button type="submit" class="btn small">+ Adicionar recorrência</button>
@@ -480,6 +481,7 @@
             <input type="text" id="recReceitaOrigem" list="listaOrigens" placeholder="Origem" required>
             <input type="number" id="recReceitaDia" placeholder="Dia do mês" min="1" max="31" required style="width:110px;">
             <input type="text" id="recReceitaDescricao" placeholder="Descrição (opcional)">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;">Início: <input type="date" id="recReceitaDataInicio" style="width:150px;"></label>
             <input type="date" id="recReceitaDataFim" style="width:150px;" disabled>
             <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;"><input type="checkbox" id="recReceitaSemFim" checked> Sem data de término</label>
             <button type="submit" class="btn small">+ Adicionar recorrência</button>
@@ -1159,8 +1161,9 @@ document.getElementById('formRecorrenteDespesa').addEventListener('submit', (e)=
   const descricao = document.getElementById('recDespesaDescricao').value.trim();
   const semFim = document.getElementById('recDespesaSemFim').checked;
   const dataFim = semFim ? null : (document.getElementById('recDespesaDataFim').value || null);
+  const dataInicio = document.getElementById('recDespesaDataInicio').value || null;
   if(!valor || valor<=0 || !dia || dia<1 || dia>31) return;
-  recurringExpenses.push({id:uid('rec'), valor, categoria, diaDoMes:dia, descricao, dataFim, ativo:true});
+  recurringExpenses.push({id:uid('rec'), valor, categoria, diaDoMes:dia, descricao, dataInicio, dataFim, ativo:true});
   saveData('pf_recurring_expenses', recurringExpenses);
   document.getElementById('formRecorrenteDespesa').reset();
   document.getElementById('recDespesaSemFim').checked = true;
@@ -1177,9 +1180,10 @@ function renderRecurringExpenses(){
   if(!recurringExpenses.length){ el.innerHTML = '<p class="text-muted">Ainda não tens despesas recorrentes configuradas.</p>'; return; }
   el.innerHTML = recurringExpenses.map(r=>{
     const c = catInfo(r.categoria);
+    const inicioTxt = r.dataInicio ? `desde ${formatDateDisplay(r.dataInicio)}` : '';
     const fimTxt = r.dataFim ? `até ${formatDateDisplay(r.dataFim)}` : 'sem fim';
     return `<div class="recur-row">
-      <div class="recur-info">${c.ico} ${c.nome} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${fimTxt}</span></div>
+      <div class="recur-info">${c.ico} ${c.nome} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${inicioTxt ? inicioTxt+' · ' : ''}${fimTxt}</span></div>
       <div class="recur-actions">
         <label class="switch"><input type="checkbox" data-rec-toggle="${r.id}" ${r.ativo?'checked':''}><span class="switch-slider"></span></label>
         <button class="row-actions del" data-rec-del="${r.id}" style="border:none;background:none;color:var(--text-soft);cursor:pointer;">✕</button>
@@ -1217,8 +1221,9 @@ document.getElementById('formRecorrenteReceita').addEventListener('submit', (e)=
   const descricao = document.getElementById('recReceitaDescricao').value.trim();
   const semFim = document.getElementById('recReceitaSemFim').checked;
   const dataFim = semFim ? null : (document.getElementById('recReceitaDataFim').value || null);
+  const dataInicio = document.getElementById('recReceitaDataInicio').value || null;
   if(!valor || valor<=0 || !origem || !dia || dia<1 || dia>31) return;
-  recurringIncomes.push({id:uid('rec'), valor, origem, diaDoMes:dia, descricao, dataFim, ativo:true});
+  recurringIncomes.push({id:uid('rec'), valor, origem, diaDoMes:dia, descricao, dataInicio, dataFim, ativo:true});
   saveData('pf_recurring_incomes', recurringIncomes);
   document.getElementById('formRecorrenteReceita').reset();
   document.getElementById('recReceitaSemFim').checked = true;
@@ -1234,10 +1239,11 @@ function renderRecurringIncomes(){
   const el = document.getElementById('recorrenciasReceitaList');
   if(!recurringIncomes.length){ el.innerHTML = '<p class="text-muted">Ainda não tens receitas recorrentes configuradas.</p>'; return; }
   el.innerHTML = recurringIncomes.map(r=>{
+    const inicioTxt = r.dataInicio ? `desde ${formatDateDisplay(r.dataInicio)}` : '';
     const fimTxt = r.dataFim ? `até ${formatDateDisplay(r.dataFim)}` : 'sem fim';
     return `
     <div class="recur-row">
-      <div class="recur-info">${r.origem} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${fimTxt}</span></div>
+      <div class="recur-info">${r.origem} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${inicioTxt ? inicioTxt+' · ' : ''}${fimTxt}</span></div>
       <div class="recur-actions">
         <label class="switch"><input type="checkbox" data-rec-toggle="${r.id}" ${r.ativo?'checked':''}><span class="switch-slider"></span></label>
         <button class="row-actions del" data-rec-del="${r.id}" style="border:none;background:none;color:var(--text-soft);cursor:pointer;">✕</button>
@@ -1268,9 +1274,26 @@ function generateRecurringEntries(){
   const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
   let changed = false;
 
+  // remove lançamentos gerados automaticamente para datas anteriores ao início definido (corrige recorrências criadas com data de início no futuro)
+  recurringExpenses.forEach(r=>{
+    if(r.dataInicio){
+      const before = expenses.length;
+      expenses = expenses.filter(e=>!(e.recorrenciaId===r.id && e.data < r.dataInicio));
+      if(expenses.length !== before) changed = true;
+    }
+  });
+  recurringIncomes.forEach(r=>{
+    if(r.dataInicio){
+      const before = incomes.length;
+      incomes = incomes.filter(i=>!(i.recorrenciaId===r.id && i.data < r.dataInicio));
+      if(incomes.length !== before) changed = true;
+    }
+  });
+
   recurringExpenses.filter(r=>r.ativo).forEach(r=>{
     const dia = Math.min(r.diaDoMes, daysInMonth);
     const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+    if(r.dataInicio && data < r.dataInicio) return; // ainda não começou
     if(r.dataFim && data > r.dataFim) return; // já terminou
     const already = expenses.some(e=>e.recorrenciaId===r.id && getMonthKey(e.data)===curKey);
     if(!already){
@@ -1281,6 +1304,7 @@ function generateRecurringEntries(){
   recurringIncomes.filter(r=>r.ativo).forEach(r=>{
     const dia = Math.min(r.diaDoMes, daysInMonth);
     const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+    if(r.dataInicio && data < r.dataInicio) return; // ainda não começou
     if(r.dataFim && data > r.dataFim) return; // já terminou
     const already = incomes.some(i=>i.recorrenciaId===r.id && getMonthKey(i.data)===curKey);
     if(!already){
