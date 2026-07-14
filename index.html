@@ -1572,8 +1572,9 @@ function renderInvestimentos(){
 /* ============================= CÁLCULOS DASHBOARD ============================= */
 function contaAtual(){
   const ref = saldoInicial.data || '';
-  const incAfter = incomes.filter(i=>i.data > ref).reduce((s,i)=>s+i.valor,0);
-  const expAfter = expenses.filter(e=>e.data > ref).reduce((s,e)=>s+e.valor,0);
+  const hoje = todayISO();
+  const incAfter = incomes.filter(i=>i.data > ref && i.data <= hoje).reduce((s,i)=>s+i.valor,0);
+  const expAfter = expenses.filter(e=>e.data > ref && e.data <= hoje).reduce((s,e)=>s+e.valor,0);
   return (saldoInicial.valor||0) + incAfter - expAfter;
 }
 
