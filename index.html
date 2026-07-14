@@ -323,6 +323,11 @@
           <span class="stat-sub" id="statSaldoSub"></span>
         </div>
         <div class="stat-card">
+          <span class="stat-label">Saldo em conta <button type="button" id="btnEditSaldoInicial" title="Definir saldo atual" style="border:none;background:none;cursor:pointer;color:var(--text-soft);font-size:13px;">✎</button></span>
+          <span class="stat-value" id="statSaldoConta">€0,00</span>
+          <span class="stat-sub" id="statSaldoContaSub"></span>
+        </div>
+        <div class="stat-card">
           <span class="stat-label">Património investido</span>
           <span class="stat-value invest" id="statPatrimonio">€0,00</span>
         </div>
@@ -331,6 +336,18 @@
           <span class="stat-value" id="statRetornoAnual">—</span>
         </div>
       </div>
+
+      <details class="panel" id="panelSaldoInicial">
+        <summary>💰 Definir saldo atual em conta</summary>
+        <div class="panel-body">
+          <p class="text-muted">Indica quanto dinheiro tens agora nas tuas contas (fora dos investimentos), para a app não começar do zero. A partir da data que indicares, a app soma/subtrai automaticamente as receitas e despesas que registares — despesas/receitas registadas nessa data ou antes não são contadas de novo.</p>
+          <form id="formSaldoInicial" class="inline-form" style="margin-bottom:0;">
+            <input type="number" id="saldoInicialValor" placeholder="Saldo atual (€)" step="0.01">
+            <input type="date" id="saldoInicialData">
+            <button type="submit" class="btn small">Guardar saldo</button>
+          </form>
+        </div>
+      </details>
 
       <div class="charts-grid">
         <div class="card chart-card">
@@ -384,6 +401,8 @@
             <select id="recDespesaCategoria"></select>
             <input type="number" id="recDespesaDia" placeholder="Dia do mês" min="1" max="31" required style="width:110px;">
             <input type="text" id="recDespesaDescricao" placeholder="Descrição (opcional)">
+            <input type="date" id="recDespesaDataFim" style="width:150px;" disabled>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;"><input type="checkbox" id="recDespesaSemFim" checked> Sem data de término</label>
             <button type="submit" class="btn small">+ Adicionar recorrência</button>
           </form>
           <div id="recorrenciasDespesaList" style="margin-top:10px;"></div>
@@ -461,6 +480,8 @@
             <input type="text" id="recReceitaOrigem" list="listaOrigens" placeholder="Origem" required>
             <input type="number" id="recReceitaDia" placeholder="Dia do mês" min="1" max="31" required style="width:110px;">
             <input type="text" id="recReceitaDescricao" placeholder="Descrição (opcional)">
+            <input type="date" id="recReceitaDataFim" style="width:150px;" disabled>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-soft);white-space:nowrap;"><input type="checkbox" id="recReceitaSemFim" checked> Sem data de término</label>
             <button type="submit" class="btn small">+ Adicionar recorrência</button>
           </form>
           <div id="recorrenciasReceitaList" style="margin-top:10px;"></div>
@@ -617,10 +638,11 @@ let categories        = loadArray('pf_categories');
 let budgets           = loadObject('pf_budgets', {});
 let recurringExpenses  = loadArray('pf_recurring_expenses');
 let recurringIncomes   = loadArray('pf_recurring_incomes');
+let saldoInicial       = loadObject('pf_saldo_inicial', {valor:0, data:''});
 
 if(!categories.length){
   categories = DEFAULT_CATEGORIES.map(c=>({...c}));
-  saveData('pf_categories', categories);
+  localStorage.setItem('pf_categories', JSON.stringify(categories));
 }
 
 /* ============================= SINCRONIZAÇÃO (Firebase) ============================= */
@@ -695,7 +717,7 @@ function schedulePush(){
 
 function pushToCloud(){
   if(!syncCode || !syncDb) return;
-  const payload = { expenses, incomes, investments, categories, budgets, recurringExpenses, recurringIncomes };
+  const payload = { expenses, incomes, investments, categories, budgets, recurringExpenses, recurringIncomes, saldoInicial };
   syncDb.ref('sync/' + syncCode).set({
     payload, updatedAt: Date.now(), deviceId
   }).then(()=>{
@@ -724,6 +746,7 @@ function attachSyncListener(code){
     budgets = p.budgets || {};
     recurringExpenses = p.recurringExpenses || [];
     recurringIncomes = p.recurringIncomes || [];
+    saldoInicial = p.saldoInicial || {valor:0, data:''};
     localStorage.setItem('pf_expenses', JSON.stringify(expenses));
     localStorage.setItem('pf_incomes', JSON.stringify(incomes));
     localStorage.setItem('pf_investments', JSON.stringify(investments));
@@ -731,6 +754,7 @@ function attachSyncListener(code){
     localStorage.setItem('pf_budgets', JSON.stringify(budgets));
     localStorage.setItem('pf_recurring_expenses', JSON.stringify(recurringExpenses));
     localStorage.setItem('pf_recurring_incomes', JSON.stringify(recurringIncomes));
+    localStorage.setItem('pf_saldo_inicial', JSON.stringify(saldoInicial));
     renderAll();
     applyingRemote = false;
     setSyncStatus('ligado', 'Atualizado a partir de outro dispositivo às ' + new Date().toLocaleTimeString('pt-PT'));
@@ -1098,17 +1122,49 @@ function renderBudgets(){
   });
 }
 
+/* ============================= SALDO INICIAL ============================= */
+function fillSaldoInicialForm(){
+  document.getElementById('saldoInicialValor').value = saldoInicial.valor || '';
+  document.getElementById('saldoInicialData').value = saldoInicial.data || todayISO();
+}
+fillSaldoInicialForm();
+
+document.getElementById('formSaldoInicial').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const valor = parseFloat(document.getElementById('saldoInicialValor').value);
+  const data = document.getElementById('saldoInicialData').value || todayISO();
+  saldoInicial = { valor: isNaN(valor) ? 0 : valor, data };
+  saveData('pf_saldo_inicial', saldoInicial);
+  renderDashboard();
+});
+
+document.getElementById('btnEditSaldoInicial').addEventListener('click', ()=>{
+  const panel = document.getElementById('panelSaldoInicial');
+  panel.open = true;
+  panel.scrollIntoView({behavior:'smooth', block:'center'});
+  document.getElementById('saldoInicialValor').focus();
+});
+
 /* ============================= RECORRÊNCIAS ============================= */
+document.getElementById('recDespesaSemFim').addEventListener('change', function(){
+  document.getElementById('recDespesaDataFim').disabled = this.checked;
+  if(this.checked) document.getElementById('recDespesaDataFim').value = '';
+});
+
 document.getElementById('formRecorrenteDespesa').addEventListener('submit', (e)=>{
   e.preventDefault();
   const valor = parseFloat(document.getElementById('recDespesaValor').value);
   const categoria = document.getElementById('recDespesaCategoria').value;
   const dia = parseInt(document.getElementById('recDespesaDia').value, 10);
   const descricao = document.getElementById('recDespesaDescricao').value.trim();
+  const semFim = document.getElementById('recDespesaSemFim').checked;
+  const dataFim = semFim ? null : (document.getElementById('recDespesaDataFim').value || null);
   if(!valor || valor<=0 || !dia || dia<1 || dia>31) return;
-  recurringExpenses.push({id:uid('rec'), valor, categoria, diaDoMes:dia, descricao, ativo:true});
+  recurringExpenses.push({id:uid('rec'), valor, categoria, diaDoMes:dia, descricao, dataFim, ativo:true});
   saveData('pf_recurring_expenses', recurringExpenses);
   document.getElementById('formRecorrenteDespesa').reset();
+  document.getElementById('recDespesaSemFim').checked = true;
+  document.getElementById('recDespesaDataFim').disabled = true;
   generateRecurringEntries();
   renderRecurringExpenses();
   renderDespesas();
@@ -1121,8 +1177,9 @@ function renderRecurringExpenses(){
   if(!recurringExpenses.length){ el.innerHTML = '<p class="text-muted">Ainda não tens despesas recorrentes configuradas.</p>'; return; }
   el.innerHTML = recurringExpenses.map(r=>{
     const c = catInfo(r.categoria);
+    const fimTxt = r.dataFim ? `até ${formatDateDisplay(r.dataFim)}` : 'sem fim';
     return `<div class="recur-row">
-      <div class="recur-info">${c.ico} ${c.nome} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''}</div>
+      <div class="recur-info">${c.ico} ${c.nome} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${fimTxt}</span></div>
       <div class="recur-actions">
         <label class="switch"><input type="checkbox" data-rec-toggle="${r.id}" ${r.ativo?'checked':''}><span class="switch-slider"></span></label>
         <button class="row-actions del" data-rec-del="${r.id}" style="border:none;background:none;color:var(--text-soft);cursor:pointer;">✕</button>
@@ -1147,16 +1204,25 @@ function renderRecurringExpenses(){
   });
 }
 
+document.getElementById('recReceitaSemFim').addEventListener('change', function(){
+  document.getElementById('recReceitaDataFim').disabled = this.checked;
+  if(this.checked) document.getElementById('recReceitaDataFim').value = '';
+});
+
 document.getElementById('formRecorrenteReceita').addEventListener('submit', (e)=>{
   e.preventDefault();
   const valor = parseFloat(document.getElementById('recReceitaValor').value);
   const origem = document.getElementById('recReceitaOrigem').value.trim();
   const dia = parseInt(document.getElementById('recReceitaDia').value, 10);
   const descricao = document.getElementById('recReceitaDescricao').value.trim();
+  const semFim = document.getElementById('recReceitaSemFim').checked;
+  const dataFim = semFim ? null : (document.getElementById('recReceitaDataFim').value || null);
   if(!valor || valor<=0 || !origem || !dia || dia<1 || dia>31) return;
-  recurringIncomes.push({id:uid('rec'), valor, origem, diaDoMes:dia, descricao, ativo:true});
+  recurringIncomes.push({id:uid('rec'), valor, origem, diaDoMes:dia, descricao, dataFim, ativo:true});
   saveData('pf_recurring_incomes', recurringIncomes);
   document.getElementById('formRecorrenteReceita').reset();
+  document.getElementById('recReceitaSemFim').checked = true;
+  document.getElementById('recReceitaDataFim').disabled = true;
   generateRecurringEntries();
   renderRecurringIncomes();
   renderReceitas();
@@ -1167,14 +1233,17 @@ document.getElementById('formRecorrenteReceita').addEventListener('submit', (e)=
 function renderRecurringIncomes(){
   const el = document.getElementById('recorrenciasReceitaList');
   if(!recurringIncomes.length){ el.innerHTML = '<p class="text-muted">Ainda não tens receitas recorrentes configuradas.</p>'; return; }
-  el.innerHTML = recurringIncomes.map(r=>`
+  el.innerHTML = recurringIncomes.map(r=>{
+    const fimTxt = r.dataFim ? `até ${formatDateDisplay(r.dataFim)}` : 'sem fim';
+    return `
     <div class="recur-row">
-      <div class="recur-info">${r.origem} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''}</div>
+      <div class="recur-info">${r.origem} · ${fmtCurrency(r.valor)} · dia ${r.diaDoMes}${r.descricao ? ' · '+r.descricao : ''} · <span class="text-muted">${fimTxt}</span></div>
       <div class="recur-actions">
         <label class="switch"><input type="checkbox" data-rec-toggle="${r.id}" ${r.ativo?'checked':''}><span class="switch-slider"></span></label>
         <button class="row-actions del" data-rec-del="${r.id}" style="border:none;background:none;color:var(--text-soft);cursor:pointer;">✕</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   el.querySelectorAll('[data-rec-toggle]').forEach(cb=>{
     cb.addEventListener('change', ()=>{
       const r = recurringIncomes.find(x=>x.id===cb.dataset.recToggle);
@@ -1200,19 +1269,21 @@ function generateRecurringEntries(){
   let changed = false;
 
   recurringExpenses.filter(r=>r.ativo).forEach(r=>{
+    const dia = Math.min(r.diaDoMes, daysInMonth);
+    const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+    if(r.dataFim && data > r.dataFim) return; // já terminou
     const already = expenses.some(e=>e.recorrenciaId===r.id && getMonthKey(e.data)===curKey);
     if(!already){
-      const dia = Math.min(r.diaDoMes, daysInMonth);
-      const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
       expenses.push({id:uid('exp'), data, valor:r.valor, categoria:r.categoria, descricao:r.descricao || '(recorrente)', recorrenciaId:r.id});
       changed = true;
     }
   });
   recurringIncomes.filter(r=>r.ativo).forEach(r=>{
+    const dia = Math.min(r.diaDoMes, daysInMonth);
+    const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+    if(r.dataFim && data > r.dataFim) return; // já terminou
     const already = incomes.some(i=>i.recorrenciaId===r.id && getMonthKey(i.data)===curKey);
     if(!already){
-      const dia = Math.min(r.diaDoMes, daysInMonth);
-      const data = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
       incomes.push({id:uid('inc'), data, valor:r.valor, origem:r.origem, descricao:r.descricao || '(recorrente)', recorrenciaId:r.id});
       changed = true;
     }
@@ -1475,6 +1546,13 @@ function renderInvestimentos(){
 }
 
 /* ============================= CÁLCULOS DASHBOARD ============================= */
+function contaAtual(){
+  const ref = saldoInicial.data || '';
+  const incAfter = incomes.filter(i=>i.data > ref).reduce((s,i)=>s+i.valor,0);
+  const expAfter = expenses.filter(e=>e.data > ref).reduce((s,e)=>s+e.valor,0);
+  return (saldoInicial.valor||0) + incAfter - expAfter;
+}
+
 function monthlyTotals(monthsBack){
   const months = [];
   for(let i=monthsBack-1;i>=0;i--){
@@ -1507,6 +1585,12 @@ function renderDashboard(){
   saldoEl.textContent = (saldo>=0?'+':'') + fmtCurrency(saldo);
   saldoEl.style.color = saldo>=0 ? 'var(--primary-dark)' : 'var(--danger)';
   document.getElementById('statSaldoSub').textContent = curMonth.receitas>0 ? `taxa de poupança: ${((saldo/curMonth.receitas)*100).toFixed(0)}%` : '';
+
+  const saldoContaEl = document.getElementById('statSaldoConta');
+  const saldoConta = contaAtual();
+  saldoContaEl.textContent = fmtCurrency(saldoConta);
+  saldoContaEl.style.color = saldoConta>=0 ? 'var(--text)' : 'var(--danger)';
+  document.getElementById('statSaldoContaSub').textContent = saldoInicial.data ? `definido a partir de ${formatDateDisplay(saldoInicial.data)}` : 'clica em ✎ para definir';
 
   const invSum = investmentSummary();
   document.getElementById('statPatrimonio').textContent = fmtCurrency(invSum.valorAtual);
@@ -1578,8 +1662,7 @@ function renderForecast(months12, invSum){
   const recentMonths = months12.filter(m => m.receitas>0 || m.despesas>0).slice(-6);
   const avgSavings = recentMonths.length ? recentMonths.reduce((s,m)=>s+(m.receitas-m.despesas),0)/recentMonths.length : 0;
 
-  const poupancaAcumulada = incomes.reduce((s,i)=>s+i.valor,0) - expenses.reduce((s,e)=>s+e.valor,0);
-  const netWorthAtual = poupancaAcumulada + invSum.valorAtual;
+  const netWorthAtual = contaAtual() + invSum.valorAtual;
   const annualRatePct = invSum.retornoAnualPct !== null ? invSum.retornoAnualPct : 0;
   const monthlyRate = Math.pow(1 + annualRatePct/100, 1/12) - 1;
 
@@ -1719,7 +1802,7 @@ function exportJSON(){
   const payload = {
     versao: 1,
     exportadoEm: new Date().toISOString(),
-    expenses, incomes, investments, categories, budgets, recurringExpenses, recurringIncomes
+    expenses, incomes, investments, categories, budgets, recurringExpenses, recurringIncomes, saldoInicial
   };
   downloadFile(`backup-financas-${todayISO()}.json`, JSON.stringify(payload, null, 2), 'application/json');
 }
@@ -1757,6 +1840,7 @@ function importJSONFile(file){
       budgets = data.budgets || {};
       recurringExpenses = data.recurringExpenses || [];
       recurringIncomes = data.recurringIncomes || [];
+      saldoInicial = data.saldoInicial || {valor:0, data:''};
       saveData('pf_expenses', expenses);
       saveData('pf_incomes', incomes);
       saveData('pf_investments', investments);
@@ -1764,6 +1848,7 @@ function importJSONFile(file){
       saveData('pf_budgets', budgets);
       saveData('pf_recurring_expenses', recurringExpenses);
       saveData('pf_recurring_incomes', recurringIncomes);
+      saveData('pf_saldo_inicial', saldoInicial);
       renderAll();
       alert('Dados importados com sucesso.');
     }catch(err){
@@ -1802,6 +1887,7 @@ function renderAll(){
   renderCategoryManager();
   renderDashboard();
   renderTips();
+  fillSaldoInicialForm();
 }
 
 generateRecurringEntries();
