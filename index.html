@@ -127,6 +127,12 @@
   .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);}
   .legend-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
 
+  .dash-detalhe-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:14px;}
+  .dash-detalhe-col h4{font-size:13px;text-transform:uppercase;letter-spacing:.3px;color:var(--text-soft);margin:0 0 8px;}
+  .dash-detalhe-col table{font-size:13px;}
+  .dash-detalhe-col .empty-state{padding:16px 0;font-size:13px;}
+  .dash-detalhe-total{font-size:13px;font-weight:700;padding:8px 8px 0;border-top:1px solid var(--border);margin-top:4px;}
+
   /* Forms */
   .inline-form{
     display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px;
@@ -358,6 +364,33 @@
           <h3>Despesas por categoria — este mês</h3>
           <canvas id="chartCategories" height="120"></canvas>
           <div class="legend" id="categoryLegend"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+          <h3 style="margin:0;">Detalhe mensal — despesas e receitas</h3>
+          <select id="dashDetalheMes" style="height:38px;"></select>
+        </div>
+        <div class="dash-detalhe-grid">
+          <div class="dash-detalhe-col">
+            <h4>Despesas</h4>
+            <table id="dashTableDespesas">
+              <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="empty-state" id="dashEmptyDespesas" style="display:none;">Sem despesas neste mês.</div>
+            <div class="dash-detalhe-total" id="dashTotalDespesas"></div>
+          </div>
+          <div class="dash-detalhe-col">
+            <h4>Receitas</h4>
+            <table id="dashTableReceitas">
+              <thead><tr><th>Data</th><th>Origem</th><th>Descrição</th><th>Valor</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="empty-state" id="dashEmptyReceitas" style="display:none;">Sem receitas neste mês.</div>
+            <div class="dash-detalhe-total" id="dashTotalReceitas"></div>
+          </div>
         </div>
       </div>
 
@@ -1658,7 +1691,54 @@ function renderDashboard(){
 
   renderInvestHistoryChart();
   renderForecast(months12, invSum);
+  populateDashDetalheMes();
+  renderDashDetalheMes();
 }
+
+function populateDashDetalheMes(){
+  const keys = new Set();
+  expenses.forEach(e=>keys.add(getMonthKey(e.data)));
+  incomes.forEach(i=>keys.add(getMonthKey(i.data)));
+  keys.add(monthKeyOffset(0));
+  const sorted = Array.from(keys).sort().reverse();
+  const sel = document.getElementById('dashDetalheMes');
+  const prev = sel.value;
+  sel.innerHTML = sorted.map(k=>`<option value="${k}">${monthLabel(k)}</option>`).join('');
+  sel.value = sorted.includes(prev) ? prev : monthKeyOffset(0);
+}
+
+function renderDashDetalheMes(){
+  const mes = document.getElementById('dashDetalheMes').value || monthKeyOffset(0);
+
+  const listDespesas = expenses.filter(e=>getMonthKey(e.data)===mes).sort((a,b)=>a.data.localeCompare(b.data));
+  const tbodyD = document.querySelector('#dashTableDespesas tbody');
+  tbodyD.innerHTML = listDespesas.map(e=>{
+    const c = catInfo(e.categoria);
+    return `<tr>
+      <td>${formatDateDisplay(e.data)}</td>
+      <td><span class="cat-chip" style="background:${c.cor}1a;color:${c.cor}">${c.ico} ${c.nome}</span></td>
+      <td>${e.descricao || '<span style=\"color:#c3c8d6\">—</span>'}</td>
+      <td class="amount-neg">-${fmtCurrency(e.valor)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('dashEmptyDespesas').style.display = listDespesas.length ? 'none' : 'block';
+  const totalDespesas = listDespesas.reduce((s,e)=>s+e.valor,0);
+  document.getElementById('dashTotalDespesas').textContent = listDespesas.length ? `Total: ${fmtCurrency(totalDespesas)}` : '';
+
+  const listReceitas = incomes.filter(i=>getMonthKey(i.data)===mes).sort((a,b)=>a.data.localeCompare(b.data));
+  const tbodyR = document.querySelector('#dashTableReceitas tbody');
+  tbodyR.innerHTML = listReceitas.map(i=>`<tr>
+      <td>${formatDateDisplay(i.data)}</td>
+      <td><span class="cat-chip" style="background:#e6f9f1;color:#059669">${i.origem}</span></td>
+      <td>${i.descricao || '<span style=\"color:#c3c8d6\">—</span>'}</td>
+      <td class="amount-pos">+${fmtCurrency(i.valor)}</td>
+    </tr>`).join('');
+  document.getElementById('dashEmptyReceitas').style.display = listReceitas.length ? 'none' : 'block';
+  const totalReceitas = listReceitas.reduce((s,i)=>s+i.valor,0);
+  document.getElementById('dashTotalReceitas').textContent = listReceitas.length ? `Total: ${fmtCurrency(totalReceitas)}` : '';
+}
+
+document.getElementById('dashDetalheMes').addEventListener('change', renderDashDetalheMes);
 
 function renderInvestHistoryChart(){
   const series = investmentHistorySeries();
