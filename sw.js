@@ -1,6 +1,7 @@
-const CACHE_NAME = 'minhasfinancas-v1';
+const CACHE_NAME = 'financas-v2';
 const ASSETS = [
   './index.html',
+  './antiga.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
