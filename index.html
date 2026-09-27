@@ -30,6 +30,7 @@
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
+      color-scheme:dark;
       --bg:#0d1117;
       --card:#161b22;
       --text:#e6edf3;
@@ -43,6 +44,21 @@
       --blue-soft:rgba(96,165,250,.12);
       --shadow:none;
     }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#0d1117;
+    --card:#161b22;
+    --text:#e6edf3;
+    --muted:#8b949e;
+    --border:#2a313c;
+    --green:#34d399;
+    --green-soft:rgba(52,211,153,.12);
+    --red:#f87171;
+    --red-soft:rgba(248,113,113,.12);
+    --blue:#60a5fa;
+    --blue-soft:rgba(96,165,250,.12);
+    --shadow:none;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -231,6 +247,17 @@
   </form>
 </dialog>
 
+<dialog id="dlgAsk">
+  <form method="dialog">
+    <h3>Confirmar</h3>
+    <p class="small muted" id="askMsg" style="margin:0 0 12px;white-space:pre-line;"></p>
+    <div class="actions">
+      <button type="submit" value="no" class="ghost">Cancelar</button>
+      <button type="submit" value="yes" class="primary" id="askYes">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -292,6 +319,18 @@
   const label = (e) => e.desc || (e.tipo==='despesa' ? 'Despesa' : 'Receita');
   let toastTimer;
   function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2200); }
+
+  // Confirmação dentro da página (em vez de confirm()).
+  function ask(msg, okLabel='Confirmar'){
+    return new Promise(resolve=>{
+      const d=$('dlgAsk');
+      $('askMsg').textContent=msg;
+      $('askYes').textContent=okLabel;
+      d.returnValue='';
+      d.onclose=()=>resolve(d.returnValue==='yes');
+      d.showModal();
+    });
+  }
 
   // ---------- cálculo ----------
   // Ocorrência de um movimento mensal num dado mês (ou null se não se aplica).
@@ -501,17 +540,17 @@
   $('fData').addEventListener('change',()=>{ if(!$('fData').value) setDate(todayISO()); });
 
   // ---------- apagar / terminar ----------
-  document.addEventListener('click', (ev)=>{
+  document.addEventListener('click', async (ev)=>{
     const del = ev.target.closest('[data-del]');
     if (del){
       const id = del.dataset.del;
       if (id.includes('@')){
         const [recId, mk] = id.split('@');
         const r = data.mensais.find(x=>x.id===recId); if (!r) return;
-        if (!confirm(`Remover "${label(r)}" apenas em ${monthName(mk)}?\n(Para deixar de repetir, usa o separador "Mensais".)`)) return;
+        if (!(await ask(`Remover "${label(r)}" apenas em ${monthName(mk)}?\n(Para deixar de repetir, usa o separador "Mensais".)`))) return;
         r.skip = r.skip || []; r.skip.push(mk);
       } else {
-        if (!confirm('Apagar este movimento?')) return;
+        if (!(await ask('Apagar este movimento?'))) return;
         data.movs = data.movs.filter(m=>m.id!==id);
       }
       save(); render(); toast('Removido');
@@ -523,10 +562,10 @@
       const today = todayISO(), curMk = monthKey(today);
       const name = label(r);
       if (r.inicio > curMk || (r.inicio===curMk && occurrence(r,curMk)?.data > today)){
-        if (!confirm(`Apagar "${name}"? Ainda não houve nenhum pagamento.`)) return;
+        if (!(await ask(`Apagar "${name}"? Ainda não houve nenhum pagamento.`))) return;
         data.mensais = data.mensais.filter(x=>x!==r);
       } else {
-        if (!confirm(`Deixar de repetir "${name}"?\nOs meses anteriores ficam no histórico.`)) return;
+        if (!(await ask(`Deixar de repetir "${name}"?\nOs meses anteriores ficam no histórico.`))) return;
         const o = occurrence({...r, fim:null, skip:[]}, curMk);
         r.fim = o && o.data<=today ? curMk : addMonths(curMk,-1);
       }
@@ -535,7 +574,7 @@
     }
     const delrec = ev.target.closest('[data-delrec]');
     if (delrec){
-      if (!confirm('Apagar definitivamente, incluindo o histórico dos meses anteriores?')) return;
+      if (!(await ask('Apagar definitivamente, incluindo o histórico dos meses anteriores?'))) return;
       data.mensais = data.mensais.filter(x=>x.id!==delrec.dataset.delrec);
       save(); render(); toast('Apagado');
     }
@@ -582,7 +621,7 @@
     try{
       const d = JSON.parse(await file.text());
       if (!d || !Array.isArray(d.movs) || !Array.isArray(d.mensais)) throw new Error();
-      if (!confirm('Substituir os dados atuais pelos da cópia?')) return;
+      if (!(await ask('Substituir os dados atuais pelos da cópia?'))) return;
       data = { saldo:d.saldo||null, movs:d.movs, mensais:d.mensais };
       save(); render(); toast('Cópia importada');
     }catch(e){ toast('Ficheiro inválido'); }
